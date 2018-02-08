@@ -1,0 +1,5 @@
+/home/suriknik/Projects/Chat_Udp/Chat_Udp/Chat_Udp/obj/x86/Debug/.NETFramework,Version=v4.5.AssemblyAttribute.cs
+/home/suriknik/Projects/Chat_Udp/Chat_Udp/Chat_Udp/bin/Debug/Chat_Udp.pdb
+/home/suriknik/Projects/Chat_Udp/Chat_Udp/Chat_Udp/bin/Debug/Chat_Udp.exe
+/home/suriknik/Projects/Chat_Udp/Chat_Udp/Chat_Udp/obj/x86/Debug/Chat_Udp.exe
+/home/suriknik/Projects/Chat_Udp/Chat_Udp/Chat_Udp/obj/x86/Debug/Chat_Udp.pdb
