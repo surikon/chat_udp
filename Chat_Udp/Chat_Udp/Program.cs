@@ -9,9 +9,9 @@ namespace Chat_Udp
 {
 	public class PrimeTest
 	{
-		private static int quickMod(int x, long y, int p)
+		public static long quickMod(long x, long y, long p)
 		{
-			int res = 1;
+			long res = 1;
 			x %= p;
 			while (y > 0)
 			{
@@ -27,7 +27,7 @@ namespace Chat_Udp
 		{
 			Random rnd = new Random();
 			int a = rnd.Next(2, n - 2);
-			int x = quickMod(a, d, n);
+			int x = (int)quickMod(a, d, n);
 
 			if (x == 1 || x == n - 1)
 				return true;
@@ -65,57 +65,64 @@ namespace Chat_Udp
 
 	class RSA
 	{
-		private static int p = 0, q = 0, N, e, tmp1, tmp2, f, d;
+		private static int p = 0, q = 0, tmp1, tmp2;
+		private static long N, f, d, e;
+		private static List <int> prime = new List <int> ();
 
-		public static int getKeys()
+		public static long getKeys()
 		{
 			Random rnd = new Random ();
 
-			tmp1 = rnd.Next (100, 4000);
-			tmp2 = rnd.Next (100, 4000);
+			tmp1 = rnd.Next (100, prime.Count);
+			tmp2 = rnd.Next (100, prime.Count);
 
 			if (tmp1 == tmp2)
-				tmp1 += rnd.Next (20, 500);
+				tmp1 += rnd.Next (20, 100);
 
-			for (int k = 0, s = 0; s <= Math.Max (tmp1, tmp2); k++) 
-			{
-				if (PrimeTest.isPrime (k, 3)) {
-					if (s == tmp1 && p == 0)
-						p = k;
-					if (s == tmp2 && q == 0)
-						q = k;
-					s++;	
-				}
-				if (p != 0 && q != 0)
-					break;
-			}
-				
-			N = p * q;
-			f = Euler (Math.Abs (N));
-			e = rnd.Next(1, f); //ПРОВЕРЯТЬ НА ВЗАИМНУЮ ПРОСТОТУ e и Euler(N)
+			p = prime[tmp1];
+			q = prime [tmp2];
+
+			N = (long)(p * q);
+			f = (long)((p - 1) * (q - 1));
+			e = (long)(LongRandom(1, f, new Random())); //ПРОВЕРЯТЬ НА ВЗАИМНУЮ ПРОСТОТУ e и Euler(N)
 			d = reverse(e, f); //ЗАПИЛИТЬ ФУНКЦИЮ МУЛЬТИПЛИКАТИВНОГО ОБРАТНОГО
 
-			return e;
+			Console.Write ("p: " + Convert.ToString(p) + "; q: " + Convert.ToString(q) +
+				"; e: " + Convert.ToString(e) + "; d: " + Convert.ToString(d));
+
+			return d;
 		}
 
-		private static int reverse(int x, int m)
-		{
-			return -1;
+		private static long LongRandom(int min, long max, Random rand) {
+			byte[] buf = new byte[8];
+			rand.NextBytes(buf);
+			long longRand = BitConverter.ToInt64(buf, 0);
+
+			return (Math.Abs(longRand % (max - min)) + min);
 		}
 
-		private static int Euler(int n)
+		private static long reverse(long e, long f)
 		{
-			int result = n;
-			for (int i = 2; i * i <= n; i++)
-				if (n % i == 0) 
-				{
-					while (n % i == 0)
-						n /= i;
-					result -= result / i;
+			return ((2 * f - 1) / e);
+		}
+
+		public static void getPrimeNums()
+		{
+			for (int i = 100; i < int.MaxValue; i++) {
+				if (PrimeTest.isPrime (i, 3)) {
+					prime.Add (i);
 				}
-			if (n > 1)
-				result -= result / n;
-			return result;
+			}
+		}
+
+		public static long Encryption(long msg, long e, long n)
+		{
+			return PrimeTest.quickMod (msg, e, n);
+		}
+
+		public static long Decryption(long c, long d, long n)
+		{
+			return PrimeTest.quickMod (c, d, n);
 		}
 	}
 
@@ -128,12 +135,32 @@ namespace Chat_Udp
 
 		public static void Main (string[] args)
 		{
-			Console.WriteLine (RSA.getKeys ());
+			Task getPrimeNums = new Task (RSA.getPrimeNums);
+			getPrimeNums.Start ();
 
-			Console.WriteLine ("Port for receiving messages: ");
-			localPort = Convert.ToInt32 (Console.ReadLine ());
-			Console.WriteLine ("Port for sending messages: ");
-			remotePort = Convert.ToInt32(Console.ReadLine ());
+			bool NormIn = false;
+			while (!NormIn) {
+				try
+				{
+					Console.WriteLine ("Port for receiving messages: ");
+					localPort = Convert.ToInt32 (Console.ReadLine ());
+					NormIn = true;
+				}
+				catch { }
+			}
+
+
+			NormIn = false;
+			while (!NormIn) {
+				try
+				{
+					Console.WriteLine ("Port for sending messages: ");
+					remotePort = Convert.ToInt32(Console.ReadLine ());
+					NormIn = true;
+				}
+				catch { }
+			}
+				
 			Console.WriteLine ("Server IPAddress: ");
 			remoteIpAddress = Console.ReadLine ();
 
@@ -143,14 +170,13 @@ namespace Chat_Udp
 				Task listeningTask = new Task(Listen);
 				listeningTask.Start();
 
-				Console.WriteLine ("*****Start chating*****");
 				while(true)
 				{
 					string message = Console.ReadLine();
-
-					byte[] data = Encoding.ASCII.GetBytes(message);
-					EndPoint remotePoint = new IPEndPoint(IPAddress.Parse(remoteIpAddress), remotePort);
-					listeningSocket.SendTo(data, remotePoint);
+					RSA.getKeys();
+		//			byte[] data = Encoding.ASCII.GetBytes(message);
+		//			EndPoint remotePoint = new IPEndPoint(IPAddress.Parse(remoteIpAddress), remotePort);
+		//			listeningSocket.SendTo(data, remotePoint);
 				}
 			}
 
@@ -170,7 +196,9 @@ namespace Chat_Udp
 			try
 			{
 				IPEndPoint localIP = new IPEndPoint(IPAddress.Parse(remoteIpAddress), localPort);
-				listeningSocket.Bind(localIP); //???
+				listeningSocket.Bind(localIP); 
+
+				Console.WriteLine ("*****Start chating*****");
 
 				while(true)
 				{
@@ -197,17 +225,15 @@ namespace Chat_Udp
 				Console.WriteLine(ex.Message);
 			}
 
-			finally 
-			{
-				Close ();
-			}
+			Close ();
 		}
 
 		private static void Close()
 		{
 			if (listeningSocket != null)
 			{
-				listeningSocket.Shutdown(SocketShutdown.Both);
+				try{ listeningSocket.Shutdown(SocketShutdown.Both); }
+				catch {}
 				listeningSocket.Close();
 				listeningSocket = null;
 			}

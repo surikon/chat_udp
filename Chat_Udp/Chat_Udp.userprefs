@@ -1,1 +1,12 @@
-﻿<Properties StartupItem="Chat_Udp/Chat_Udp.csproj" />
+﻿<Properties StartupItem="Chat_Udp/Chat_Udp.csproj">
+  <MonoDevelop.Ide.Workspace ActiveConfiguration="Debug|x86" />
+  <MonoDevelop.Ide.Workbench ActiveDocument="Chat_Udp/Program.cs">
+    <Files>
+      <File FileName="Chat_Udp/Program.cs" Line="123" Column="21" />
+    </Files>
+  </MonoDevelop.Ide.Workbench>
+  <MonoDevelop.Ide.DebuggingService.Breakpoints>
+    <BreakpointStore />
+  </MonoDevelop.Ide.DebuggingService.Breakpoints>
+  <MonoDevelop.Ide.DebuggingService.PinnedWatches />
+</Properties>
