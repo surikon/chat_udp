@@ -3,6 +3,7 @@ using System.Text;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
+using System.Threading;
 using System.Collections.Generic;
 
 namespace Chat_Udp
@@ -69,31 +70,53 @@ namespace Chat_Udp
 		private static long N, f, d, e;
 		private static List <int> prime = new List <int> ();
 
-		public static long getKeys()
+		private static string hex_convert(long key)
+		{
+			return Convert.ToString (key, 16);
+		}
+
+		private static long gcd(long a, long b)
+		{
+			while (b != 0)
+				b = a % (a = b);
+			return a;
+		}
+
+		public static long[] getKeys()
 		{
 			Random rnd = new Random ();
 
-			tmp1 = rnd.Next (100, prime.Count);
-			tmp2 = rnd.Next (100, prime.Count);
+			tmp1 = rnd.Next (0, Math.Min(prime.Count, 50));
+			tmp2 = rnd.Next (0, Math.Min(prime.Count, 50));
 
 			if (tmp1 == tmp2)
-				tmp1 += rnd.Next (20, 100);
+				tmp1 += rnd.Next (5, 10);
 
-			p = prime[tmp1];
+			p = prime [tmp1];
 			q = prime [tmp2];
 
 			N = (long)(p * q);
 			f = (long)((p - 1) * (q - 1));
-			e = (long)(LongRandom(1, f, new Random())); //ПРОВЕРЯТЬ НА ВЗАИМНУЮ ПРОСТОТУ e и Euler(N)
+
+			for (int i = 1; i < Math.Min(f, prime.Count); i++) {
+				if ((long)prime [i] > (f % 2 == 0 ? f / 2 : f / 2 + 1)) {
+					e = (long)Convert.ToInt64 (prime [i]);
+					break;
+				}
+			}
+
 			d = reverse(e, f); //ЗАПИЛИТЬ ФУНКЦИЮ МУЛЬТИПЛИКАТИВНОГО ОБРАТНОГО
 
-			Console.Write ("p: " + Convert.ToString(p) + "; q: " + Convert.ToString(q) +
-				"; e: " + Convert.ToString(e) + "; d: " + Convert.ToString(d));
+			long[] key = new long[3];
 
-			return d;
+			key [0] = N;
+			key [1] = e;
+			key [2] = d;
+
+			return key;
 		}
 
-		private static long LongRandom(int min, long max, Random rand) {
+		public static long LongRandom(int min, long max, Random rand) {
 			byte[] buf = new byte[8];
 			rand.NextBytes(buf);
 			long longRand = BitConverter.ToInt64(buf, 0);
@@ -103,26 +126,42 @@ namespace Chat_Udp
 
 		private static long reverse(long e, long f)
 		{
-			return ((2 * f - 1) / e);
+			long d = 10;
+
+			while (true)
+			{
+				if ((d * e) % f == 1)
+					break;
+				else
+					d++;
+			}
+
+			return d;
 		}
 
 		public static void getPrimeNums()
 		{
-			for (int i = 100; i < int.MaxValue; i++) {
+			for (int i = 100; i < int.MaxValue - 999999; i++) {
 				if (PrimeTest.isPrime (i, 3)) {
 					prime.Add (i);
 				}
 			}
 		}
-
-		public static long Encryption(long msg, long e, long n)
+			
+		public static string XOR_Encrypt(byte[] arr, long key)
 		{
-			return PrimeTest.quickMod (msg, e, n);
+
+			byte[] ans = new byte[arr.Length];
+			string hex = hex_convert (key);
+			for (long i = 0; i < ans.Length; i++)
+				ans[i] = (byte)(arr[i] ^ hex[(int)i % hex.Length]);
+			return Encoding.Unicode.GetString(ans);
 		}
 
-		public static long Decryption(long c, long d, long n)
+		public static string XOR_Decrypt(string encrypt, long key)
 		{
-			return PrimeTest.quickMod (c, d, n);
+			byte[] arr = Encoding.Unicode.GetBytes(encrypt);
+			return XOR_Encrypt(arr, key);
 		}
 	}
 
@@ -132,6 +171,32 @@ namespace Chat_Udp
 		static int remotePort; //порт для отправки сообщений
 		static string remoteIpAddress;
 		static Socket listeningSocket;
+		static long[] MyKeys = new long[3];
+		static long[] HerOpenKey = new long[2];
+		static bool wasGettedN = false;
+		static bool wasGettedKey = false;
+		static bool Handshake = false;
+		static bool wasGettedMainKey = false;
+		static long MyMainKey = RSA.LongRandom(10, 9999, new Random());
+		static long HerMainKey;
+		static int HeightCursor = 0;
+	
+		protected static int origRow;
+		protected static int origCol;
+
+		public static void WriteAt(string s, int x, int y)
+		{
+			try
+			{
+				Console.SetCursorPosition(origCol+x, origRow+y);
+				Console.Write(s);
+			}
+			catch (ArgumentOutOfRangeException e)
+			{
+				Console.Clear();
+				Console.WriteLine(e.Message);
+			}
+		}
 
 		public static void Main (string[] args)
 		{
@@ -142,26 +207,25 @@ namespace Chat_Udp
 			while (!NormIn) {
 				try
 				{
-					Console.WriteLine ("Port for receiving messages: ");
+					Console.Write ("Port for receiving messages: ");
 					localPort = Convert.ToInt32 (Console.ReadLine ());
 					NormIn = true;
 				}
 				catch { }
 			}
-
-
+				
 			NormIn = false;
 			while (!NormIn) {
 				try
 				{
-					Console.WriteLine ("Port for sending messages: ");
+					Console.Write ("Port for sending messages: ");
 					remotePort = Convert.ToInt32(Console.ReadLine ());
 					NormIn = true;
 				}
 				catch { }
 			}
 				
-			Console.WriteLine ("Server IPAddress: ");
+			Console.Write ("Server IPAddress: ");
 			remoteIpAddress = Console.ReadLine ();
 
 			try
@@ -169,14 +233,92 @@ namespace Chat_Udp
 				listeningSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
 				Task listeningTask = new Task(Listen);
 				listeningTask.Start();
-
+			
 				while(true)
 				{
+					byte[] data;
+					EndPoint remotePoint = new IPEndPoint(IPAddress.Parse(remoteIpAddress), remotePort);
+
+					if(!Handshake || !wasGettedKey || !wasGettedN || !wasGettedMainKey)
+					{
+						do
+						{
+							Thread.Sleep(1000);
+							data = Encoding.Unicode.GetBytes("0");
+							listeningSocket.SendTo(data, remotePoint);
+							Thread.Sleep(10);
+						}	while (!Handshake);
+
+						Console.WriteLine ("********************\nHANDSHAKE!");
+
+						MyKeys = RSA.getKeys();
+						/* 
+						 * MyKeys[0] = N
+						 * MyKeys[1] = e
+						 * MyKeys[2] = d
+						*/
+						Console.Write("My close key: ");
+						Console.WriteLine(MyKeys[2]);
+						Console.Write("My open key: e-");
+						Console.Write(MyKeys[1]);
+						Console.Write(" N-");
+						Console.WriteLine(MyKeys[0]);
+						Console.Write("My main key: ");
+						Console.WriteLine(MyMainKey);
+
+						Console.WriteLine ("********************");
+
+						do
+						{
+							data = Encoding.Unicode.GetBytes(Convert.ToString(MyKeys[0])); //Отправляем N
+							listeningSocket.SendTo(data, remotePoint);
+							Thread.Sleep(1000);
+						} while (!wasGettedN);
+
+						Console.Write("Her open key: N-");
+						Console.Write (HerOpenKey[0]);
+
+						do
+						{
+							data = Encoding.Unicode.GetBytes(Convert.ToString(MyKeys[1])); //Отправляем e
+							listeningSocket.SendTo(data, remotePoint);
+							Thread.Sleep(1000);
+						} while (!wasGettedKey);
+							
+						Console.Write(" e-");
+						Console.WriteLine(HerOpenKey[1]);
+						Console.Write("Encoded MainKey: ");
+						Console.WriteLine (PrimeTest.quickMod(MyMainKey, HerOpenKey[1], HerOpenKey[0]));
+						/*
+						 * HerOpenKey[0] = N
+						 * HerOpenKey[1] = e
+						*/
+						Console.Write("Her main key: ");
+
+						do
+						{
+							data = Encoding.Unicode.GetBytes(Convert.ToString(PrimeTest.quickMod(
+									MyMainKey, HerOpenKey[1], HerOpenKey[0])));
+							listeningSocket.SendTo(data, remotePoint);
+							Thread.Sleep(1000);
+						} while(!wasGettedMainKey);
+							
+						Console.WriteLine(HerMainKey);
+						Console.WriteLine("********************");
+						Thread.Sleep(3000);
+
+						Console.Clear();
+						origRow = Console.CursorTop;
+						origCol = Console.CursorLeft;
+					}
+
+					Console.Write("Your message: ");
 					string message = Console.ReadLine();
-					RSA.getKeys();
-		//			byte[] data = Encoding.ASCII.GetBytes(message);
-		//			EndPoint remotePoint = new IPEndPoint(IPAddress.Parse(remoteIpAddress), remotePort);
-		//			listeningSocket.SendTo(data, remotePoint);
+					message += "~#@";
+
+					data = Encoding.Unicode.GetBytes(RSA.XOR_Decrypt(message, HerMainKey));
+					listeningSocket.SendTo(data, remotePoint);
+					HeightCursor++;
 				}
 			}
 
@@ -198,8 +340,6 @@ namespace Chat_Udp
 				IPEndPoint localIP = new IPEndPoint(IPAddress.Parse(remoteIpAddress), localPort);
 				listeningSocket.Bind(localIP); 
 
-				Console.WriteLine ("*****Start chating*****");
-
 				while(true)
 				{
 					string message;
@@ -210,13 +350,52 @@ namespace Chat_Udp
 					do
 					{
 						listeningSocket.ReceiveFrom(data, ref remoteIp);
-						message = Encoding.ASCII.GetString(data);
+						message = Encoding.Unicode.GetString(data);
 					}
-					while (listeningSocket.Available > 0);
-					IPEndPoint remoteFullIp = remoteIp as IPEndPoint;
+					while
+						(listeningSocket.Available > 0);
 
-					if(message != "" && message != " ") 
-						Console.WriteLine("{0}:{1} - {2}", remoteFullIp.Address.ToString(), remoteFullIp.Port, message);
+					if(!wasGettedKey || !Handshake || !wasGettedN || !wasGettedMainKey)
+					{
+						if(Convert.ToInt64(message) == 0)
+							Handshake = true;
+						else if(!wasGettedN)
+						{
+							wasGettedN = true;
+							HerOpenKey[0] = Convert.ToInt64(message);
+						}
+						else if(!wasGettedKey)
+						{
+							HerOpenKey[1] = Convert.ToInt64(message);
+							wasGettedKey = true;
+							
+						}
+						else if(!wasGettedMainKey)
+						{
+							wasGettedMainKey = true;
+							HerMainKey = PrimeTest.quickMod(Convert.ToInt64(message), MyKeys[2], MyKeys[0]);
+						}
+					}
+					else
+					{
+						IPEndPoint remoteFullIp = remoteIp as IPEndPoint;
+//						Console.Write("{0}:{1} - ", remoteFullIp.Address.ToString(), remoteFullIp.Port);
+
+						string who = remoteFullIp.Address.ToString() + "-" + Convert.ToString(remoteFullIp.Port) + ": ";
+						WriteAt(who, 0, HeightCursor);
+
+						string decrypted_message = RSA.XOR_Encrypt(data, MyMainKey);
+
+						for(int i = 0; i < decrypted_message.Length - 2; i++)
+						{
+							if(decrypted_message[i] == '~' && decrypted_message[i + 1] == '#' && decrypted_message[i + 2] == '@')
+							{
+								WriteAt(decrypted_message.Substring(0, i), who.Length, HeightCursor);
+							}
+						}
+						HeightCursor++;
+						WriteAt("Your Message: ", 0, HeightCursor);	
+					}
 				}
 			}
 
